@@ -11,6 +11,7 @@
   int nutrisi2;
   int tandon1;
   int tandon2;
+  int tdsValue;
   CloudRelativeHumidity humidity;
   bool pompa1;
   bool pompa_uap;
@@ -20,11 +21,16 @@
   These functions are generated with the Thing and added at the end of this sketch.
 */
 
+#include <EEPROM.h>
+#include "GravityTDS.h"
 #include "thingProperties.h"
 #include <DHT.h>
 
+#define TdsSensorPin 35
 #define sens_DHT11 4
 #define DHTTYPE DHT11
+
+GravityTDS gravityTds;
 DHT dht(sens_DHT11, DHTTYPE);
 
 const int switch1 = 13;
@@ -36,43 +42,66 @@ int triggerPin[] = {5, 19, 32, 25};
 int echoPin[] = {18, 21, 33, 26};
 int duration[4], jarak[4];
 
-void setup() {
-  Serial.begin(9600);
-  while (!Serial);
-  initProperties();
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
-  WiFi.status();
-  setDebugMessageLevel(4);
-  dht.begin();
-  pinMode(switch1, OUTPUT);
-  pinMode(switch2, OUTPUT);
-  for (int i = 0; i < 4; i++) {
-    pinMode(triggerPin[i], OUTPUT);
-    pinMode(echoPin[i], INPUT);
-  }
-  ArduinoCloud.printDebugInfo();
+
+void setup()
+{
+    Serial.begin(9600);
+    while (!Serial);
+    initProperties();
+    ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+    WiFi.status();
+    setDebugMessageLevel(4);
+    
+    EEPROM.begin(512);  //Initialize EEPROM
+    
+    gravityTds.setPin(TdsSensorPin);
+    gravityTds.setAref(3.3);  //reference voltage on ADC, default 5.0V on Arduino UNO
+    gravityTds.setAdcRange(4096);  //1024 for 10bit ADC;4096 for 12bit ADC
+    gravityTds.begin();  //initialization
+    
+    dht.begin();
+    pinMode(switch1, OUTPUT);
+    pinMode(switch2, OUTPUT);
+    for (int i = 0; i < 4; i++) {
+        pinMode(triggerPin[i], OUTPUT);
+        pinMode(echoPin[i], INPUT);
+    }
+    
+    ArduinoCloud.printDebugInfo();
 }
 
-void loop() {
-  for (int i = 0; i < 4; i++) {
-    digitalWrite(triggerPin[i], LOW);
-    delayMicroseconds(2);
-    digitalWrite(triggerPin[i], HIGH);
-    delayMicroseconds(10);
-    digitalWrite(triggerPin[i], LOW);
-    duration[i] = pulseIn(echoPin[i], HIGH);
-    jarak[i] = duration[i] * 0.034 / 2;
-    if (jarak[i] > 200) {
-      jarak[i] = 200;
+void loop()
+{
+   float temperature2 = dht.readTemperature();  //add your temperature sensor and read it
+    gravityTds.setTemperature(temperature2);  // set the temperature and execute temperature compensation
+    gravityTds.update();  //sample and calculate
+    tdsValue = gravityTds.getTdsValue();  // then get the value
+    Serial.print(tdsValue,0);
+    Serial.println("ppm");
+    delay(1000);
+    
+    for (int i = 0; i < 4; i++) {
+        digitalWrite(triggerPin[i], LOW);
+        delayMicroseconds(2);
+        digitalWrite(triggerPin[i], HIGH);
+        delayMicroseconds(10);
+        digitalWrite(triggerPin[i], LOW);
+        duration[i] = pulseIn(echoPin[i], HIGH);
+        jarak[i] = duration[i] * 0.034 / 2;
+        if (jarak[i] > 200) {
+            jarak[i] = 200;
+        }
     }
-  }
-  ArduinoCloud.update();
-  readsensor_DHT();
-  nutrisi1 = jarak[0];
-  nutrisi2 = jarak[1];
-  tandon1 = jarak[2];
-  tandon2 = jarak[3];
-  delay(1000);
+    
+    ArduinoCloud.update();
+    readsensor_DHT();
+    nutrisi1 = jarak[0];
+    nutrisi2 = jarak[1];
+    tandon1 = jarak[2];
+    tandon2 = jarak[3];
+    tdsValue = tdsValue,0;
+    
+    delay(1000);
 }
 
 void readsensor_DHT() {
@@ -104,3 +133,13 @@ void onPompaUapChange() {
 void onHumidityChange() {
   // Add your code here to act upon Humidity change
 }
+
+
+/*
+  Since TdsValue is READ_WRITE variable, onTdsValueChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+void onTdsValueChange()  {
+  // Add your code here to act upon TdsValue change
+}
+
